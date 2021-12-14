@@ -85,7 +85,7 @@ stages:
               appType: functionAppLinux
               appName: func-gtse-uat
               package: '$(Pipeline.Workspace)/drop/$(Build.BuildId).zip'
-              appSettings: -WEBSITE_NODE_DEFAULT_VERSION ~14 -STORE_HASH $(SandboxStoreHash) -API_TOKEN $(SandboxAccessToken)
+              appSettings: -WEBSITE_NODE_DEFAULT_VERSION ~14 -STORE_HASH gafdavfadvdaf -API_TOKEN sdfdsafdsa
 
 - stage: DeployProduction
   displayName: Deploy (Production)
@@ -108,4 +108,4 @@ stages:
               appType: functionAppLinux
               appName: func-gtse-prod
               package: '$(Pipeline.Workspace)/drop/$(Build.BuildId).zip'
-              appSettings: -WEBSITE_NODE_DEFAULT_VERSION ~14 -STORE_HASH $(ProductionStoreHash) -API_TOKEN $(ProductionAccessToken)
+              appSettings: -WEBSITE_NODE_DEFAULT_VERSION ~14 -STORE_HASH sdffdsa -API_TOKEN sdfsdafdsa
