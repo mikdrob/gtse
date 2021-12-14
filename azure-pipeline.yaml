@@ -1,0 +1,111 @@
+# Node.js Function App to Linux on Azure
+# Build a Node.js function app and deploy it to Azure as a Linux function app.
+# Add steps that analyze code, save build artifacts, deploy, and more:
+# https://docs.microsoft.com/azure/devops/pipelines/languages/javascript
+
+trigger:
+  - develop
+  - release/*
+  - hotfix/*
+  
+variables:
+  - group: BigCommerce
+
+  - name: isDevelopOrReleaseOrHotfix
+    value: $[or(eq(variables['build.sourceBranch'], 'refs/heads/develop'), or(contains(variables['build.sourceBranch'], 'refs/heads/release'),contains(variables['build.sourceBranch'], 'refs/heads/hotfix'),contains(variables['build.sourceBranch'], 'refs/heads/feature/azure')))]
+
+  - name: isReleaseOrHotfix
+    value: $[or(contains(variables['build.sourceBranch'], 'refs/heads/release'),contains(variables['build.sourceBranch'], 'refs/heads/hotfix'))]
+    
+  - name: workingDirectory
+    value: '$(System.DefaultWorkingDirectory)/src/azure-functions/'
+
+  - name: vmImageName
+    value: 'ubuntu-latest'
+
+stages:
+- stage: Build
+  displayName: Build stage
+  jobs:  
+  - job: Build
+    displayName: Build
+    pool:
+      vmImage: $(vmImageName)
+      
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '14.x'
+      displayName: 'Install Node.js'
+
+    - script: |
+        if [ -f extensions.csproj ]
+        then
+            dotnet build extensions.csproj --runtime ubuntu.16.04-x64 --output ./bin
+        fi
+      displayName: 'Build extensions'
+
+    - script: |
+        npm install
+        npm run build --if-present
+        npm run test --if-present
+      displayName: 'Prepare binaries'
+      workingDirectory: '$(workingDirectory)'
+      
+    - task: ArchiveFiles@2
+      displayName: 'Archive files'
+      inputs:
+        rootFolderOrFile: '$(workingDirectory)'
+        includeRootFolder: false
+        archiveType: zip
+        archiveFile: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+        replaceExistingArchive: true
+
+    - upload: $(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip
+      artifact: drop
+
+- stage: DeploySandbox
+  displayName: Deploy (Sandbox)
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables.isDevelopOrReleaseOrHotfix, true))
+  jobs:
+  - deployment: DeploySandbox
+    displayName: Deploy
+    environment: func-gtse-uat
+    pool: 
+      vmImage: $(vmImageName)
+    strategy:
+      runOnce:
+        deploy:
+          steps:            
+          - task: AzureFunctionApp@1
+            displayName: 'Azure Functions App Deploy'
+            inputs:
+              azureSubscription: gtse-uat
+              appType: functionAppLinux
+              appName: func-gtse-uat
+              package: '$(Pipeline.Workspace)/drop/$(Build.BuildId).zip'
+              appSettings: -WEBSITE_NODE_DEFAULT_VERSION ~14 -STORE_HASH $(SandboxStoreHash) -API_TOKEN $(SandboxAccessToken)
+
+- stage: DeployProduction
+  displayName: Deploy (Production)
+  dependsOn: Build
+  condition: and(succeeded(), eq(variables.isReleaseOrHotfix, true))
+  jobs:
+  - deployment: DeployProduction
+    displayName: Deploy
+    environment: func-gtse-prod
+    pool: 
+      vmImage: $(vmImageName)
+    strategy:
+      runOnce:
+        deploy:
+          steps:            
+          - task: AzureFunctionApp@1
+            displayName: 'Azure Functions App Deploy'
+            inputs:
+              azureSubscription: gtse-prod
+              appType: functionAppLinux
+              appName: func-gtse-prod
+              package: '$(Pipeline.Workspace)/drop/$(Build.BuildId).zip'
+              appSettings: -WEBSITE_NODE_DEFAULT_VERSION ~14 -STORE_HASH $(ProductionStoreHash) -API_TOKEN $(ProductionAccessToken)
